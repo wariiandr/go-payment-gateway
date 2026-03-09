@@ -1,0 +1,14 @@
+.env
+
+pgdata/
+
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+.idea/
+.vscode/
+*.swp
+*.swo
