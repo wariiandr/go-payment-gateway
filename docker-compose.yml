@@ -13,6 +13,17 @@ services:
       - db
       - kafka
     restart: unless-stopped
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    environment:
+      - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - db
+      - kafka
+    restart: unless-stopped
   db:
     image: postgres:16
     container_name: db_postgres
@@ -28,6 +39,7 @@ services:
     restart: unless-stopped
   kafka:
     image: 'apache/kafka:3.9.0'
+    user: root
     ports:
       - "${KAFKA_PORT}:9092"
     environment:
@@ -39,6 +51,7 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       CLUSTER_ID: L0ZEQh1yTbGhNNUE7-6wSQ
     volumes:
       - volume1:/tmp/kafka-logs

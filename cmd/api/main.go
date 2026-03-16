@@ -2,17 +2,21 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"payment-gateway/internal/adapter/postgres"
+	"payment-gateway/internal/adapter/provider"
+	"payment-gateway/internal/adapter/pubsub"
+	"payment-gateway/internal/app"
+	"payment-gateway/internal/config"
+	transport "payment-gateway/internal/transport/http"
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/joho/godotenv"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -22,22 +26,28 @@ func main() {
 	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	_ = godotenv.Load()
+	cfg := config.Load()
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	pool, err := pgxpool.New(rootCtx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalln("Failed to create pool:", err)
 	}
+	defer pool.Close()
 
-	r := chi.NewRouter()
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Hello world %s", time.Now().Format(time.RFC3339))
-	})
+	eventStore := postgres.NewEventStore(pool)
+	readRepo := postgres.NewPaymentReadRepository(pool)
+	paymentProvider := provider.NewPaymentProvider()
+	publisher := pubsub.NewEventPublisher(cfg.KafkaBrokers)
+
+	paymentService := app.NewPaymentService(eventStore, readRepo, paymentProvider, publisher)
+
+	paymentHandler := transport.NewPaymentHandler(paymentService)
+	router := transport.NewRouter(paymentHandler)
 
 	ongoingCtx, stopOngoing := context.WithCancel(context.Background())
 	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: r,
+		Addr:    ":" + cfg.Port,
+		Handler: router,
 		BaseContext: func(_ net.Listener) context.Context {
 			return ongoingCtx
 		},
