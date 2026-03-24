@@ -2,16 +2,16 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"payment-gateway/internal/adapter/postgres"
-	"payment-gateway/internal/adapter/provider"
-	"payment-gateway/internal/adapter/pubsub"
-	"payment-gateway/internal/app"
 	"payment-gateway/internal/config"
+	"payment-gateway/internal/repository/postgres"
+	"payment-gateway/internal/repository/provider"
+	"payment-gateway/internal/repository/pubsub"
+	"payment-gateway/internal/service"
 	transport "payment-gateway/internal/transport/http"
 	"syscall"
 	"time"
@@ -20,6 +20,9 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	shutdownPeriod := 25 * time.Second
 	shutdownHardPeriod := 5 * time.Second
 
@@ -30,7 +33,8 @@ func main() {
 
 	pool, err := pgxpool.New(rootCtx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalln("Failed to create pool:", err)
+		slog.Error("failed to create pool", "error", err)
+		os.Exit(1)
 	}
 	defer pool.Close()
 
@@ -39,7 +43,7 @@ func main() {
 	paymentProvider := provider.NewPaymentProvider()
 	publisher := pubsub.NewEventPublisher(cfg.KafkaBrokers)
 
-	paymentService := app.NewPaymentService(eventStore, readRepo, paymentProvider, publisher)
+	paymentService := service.NewPaymentService(eventStore, readRepo, paymentProvider, publisher)
 
 	paymentHandler := transport.NewPaymentHandler(paymentService)
 	router := transport.NewRouter(paymentHandler)
@@ -54,16 +58,17 @@ func main() {
 	}
 
 	go func() {
-		log.Println("Starting server on", server.Addr)
+		slog.Info("starting server", "addr", server.Addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalln("Failed to start server:", err)
+			slog.Error("failed to start server", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	<-rootCtx.Done()
 	stop()
 
-	log.Println("Shutting down server...")
+	slog.Info("shutting down server")
 	stopOngoing()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownPeriod)
@@ -72,10 +77,10 @@ func main() {
 	shutdownErr := server.Shutdown(shutdownCtx)
 
 	if shutdownErr != nil {
-		log.Println("Server shutdown error:", shutdownErr)
+		slog.Error("server shutdown error", "error", shutdownErr)
 		time.Sleep(shutdownHardPeriod)
 		os.Exit(1)
 	}
 
-	log.Println("Server shutdown successfully")
+	slog.Info("server shutdown successfully")
 }

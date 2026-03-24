@@ -3,17 +3,17 @@ package http
 import (
 	"encoding/json"
 	"net/http"
-	"payment-gateway/internal/app"
+	"payment-gateway/internal/service"
 
 	"github.com/go-chi/chi/v5"
 )
 
 type PaymentHandler struct {
-	service *app.PaymentService
+	service *service.PaymentService
 }
 
-func NewPaymentHandler(service *app.PaymentService) *PaymentHandler {
-	return &PaymentHandler{service: service}
+func NewPaymentHandler(svc *service.PaymentService) *PaymentHandler {
+	return &PaymentHandler{service: svc}
 }
 
 func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +24,7 @@ func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	appReq := &app.CreatePaymentRequest{
+	appReq := &service.CreatePaymentRequest{
 		IdempotencyKey: req.IdempotencyKey,
 		Amount:         req.Amount,
 		Currency:       req.Currency,

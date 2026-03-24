@@ -1,4 +1,4 @@
-package app
+package service
 
 import (
 	"context"
@@ -123,4 +123,18 @@ func (s *PaymentService) CancelPayment(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+func (s *PaymentService) Project(ctx context.Context, aggregateID string) error {
+	events, err := s.eventStore.LoadEvents(ctx, aggregateID)
+	if err != nil {
+		return err
+	}
+
+	p, err := payment.ReconstructFromEvents(events)
+	if err != nil {
+		return err
+	}
+
+	return s.readRepo.Upsert(ctx, p)
 }

@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
-	"payment-gateway/internal/adapter/postgres"
-	"payment-gateway/internal/adapter/provider"
-	"payment-gateway/internal/adapter/pubsub"
-	"payment-gateway/internal/app"
 	"payment-gateway/internal/config"
+	"payment-gateway/internal/repository/postgres"
+	"payment-gateway/internal/repository/provider"
+	"payment-gateway/internal/repository/pubsub"
+	"payment-gateway/internal/service"
 	"syscall"
 	"time"
 
@@ -18,6 +19,9 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -25,7 +29,8 @@ func main() {
 
 	pool, err := pgxpool.New(rootCtx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalln("Failed to create pool:", err)
+		slog.Error("failed to create pool", "error", err)
+		os.Exit(1)
 	}
 	defer pool.Close()
 
@@ -35,11 +40,12 @@ func main() {
 		if err == nil {
 			break
 		}
-		log.Printf("Waiting for Kafka... (%d/30): %v", i+1, err)
+		slog.Warn("waiting for Kafka", "attempt", i+1, "error", err)
 		time.Sleep(1 * time.Second)
 	}
 	if conn == nil {
-		log.Fatalln("Failed to connect to Kafka after 30 attempts")
+		slog.Error("failed to connect to Kafka after 30 attempts")
+		os.Exit(1)
 	}
 
 	topicConfigs := []kafka.TopicConfig{
@@ -48,9 +54,9 @@ func main() {
 	}
 	err = conn.CreateTopics(topicConfigs...)
 	if err != nil {
-		log.Println("CreateTopics (may already exist):", err)
+		slog.Warn("create topics (may already exist)", "error", err)
 	} else {
-		log.Println("Topics created successfully")
+		slog.Info("topics created successfully")
 	}
 	conn.Close()
 
@@ -69,8 +75,8 @@ func main() {
 	paymentProvider := provider.NewPaymentProvider()
 	publisher := pubsub.NewEventPublisher(cfg.KafkaBrokers)
 
-	paymentService := app.NewPaymentService(eventStore, readRepo, paymentProvider, publisher)
-	worker := app.NewPaymentWorker(commandReader, paymentService)
+	paymentService := service.NewPaymentService(eventStore, readRepo, paymentProvider, publisher)
+	worker := pubsub.NewPaymentWorker(commandReader, paymentService)
 
 	go worker.Start(rootCtx)
 
@@ -84,14 +90,13 @@ func main() {
 	})
 	defer eventReader.Close()
 
-	projector := app.NewPaymentProjector(readRepo, eventStore, eventReader)
+	projector := pubsub.NewPaymentProjector(paymentService, eventReader)
 	go projector.Start(rootCtx)
 
-	log.Println("Consumer started")
+	slog.Info("consumer started")
 	<-rootCtx.Done()
 	stop()
 
-	log.Println("Shutting down consumer...")
-
-	log.Println("Consumer stopped")
+	slog.Info("shutting down consumer")
+	slog.Info("consumer stopped")
 }

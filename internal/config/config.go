@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -27,11 +27,13 @@ func Load() *Config {
 	}
 
 	if cfg.DatabaseURL == "" {
-		log.Fatalln("DATABASE_URL is required")
+		slog.Error("DATABASE_URL is required")
+		os.Exit(1)
 	}
 
 	if cfg.KafkaBrokers[0] == "" {
-		log.Fatalln("KAFKA_BROKERS is required")
+		slog.Error("KAFKA_BROKERS is required")
+		os.Exit(1)
 	}
 
 	return cfg
