@@ -7,7 +7,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
+
+var tracer = otel.Tracer("payment-gateway/repository/postgres")
 
 type EventStore struct {
 	pool *pgxpool.Pool
@@ -18,9 +23,20 @@ func NewEventStore(pool *pgxpool.Pool) *EventStore {
 }
 
 func (store *EventStore) SaveEvents(ctx context.Context, aggregateId string, events []payment.Event, expectedVersion int) error {
-	tx, err := store.pool.Begin(ctx)
+	ctx, span := tracer.Start(ctx, "EventStore.SaveEvents")
+	defer span.End()
 
+	span.SetAttributes(
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.operation", "INSERT"),
+		attribute.String("aggregate.id", aggregateId),
+		attribute.Int("events.count", len(events)),
+	)
+
+	tx, err := store.pool.Begin(ctx)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	defer tx.Rollback(ctx)
@@ -37,16 +53,35 @@ func (store *EventStore) SaveEvents(ctx context.Context, aggregateId string, eve
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				span.RecordError(payment.ErrConcurrencyConflict)
+				span.SetStatus(codes.Error, "concurrency conflict")
 				return payment.ErrConcurrencyConflict
 			}
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return err
 		}
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+
+	return nil
 }
 
 func (store *EventStore) LoadEvents(ctx context.Context, aggregateId string) ([]payment.Event, error) {
+	ctx, span := tracer.Start(ctx, "EventStore.LoadEvents")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.operation", "SELECT"),
+		attribute.String("aggregate.id", aggregateId),
+	)
+
 	query := `
 		SELECT id, aggregate_id, event_type, version, payload, created_at
 		FROM payment_events
@@ -54,8 +89,9 @@ func (store *EventStore) LoadEvents(ctx context.Context, aggregateId string) ([]
 		ORDER BY version ASC`
 
 	rows, err := store.pool.Query(ctx, query, aggregateId)
-
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 	defer rows.Close()
@@ -69,6 +105,8 @@ func (store *EventStore) LoadEvents(ctx context.Context, aggregateId string) ([]
 			&event.Version, &event.Payload, &event.CreatedAt,
 		)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return nil, err
 		}
 
@@ -76,8 +114,11 @@ func (store *EventStore) LoadEvents(ctx context.Context, aggregateId string) ([]
 	}
 
 	if err := rows.Err(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 
+	span.SetAttributes(attribute.Int("events.loaded", len(events)))
 	return events, nil
 }

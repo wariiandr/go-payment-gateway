@@ -1,0 +1,9 @@
+scrape_configs:
+  - job_name: "payment-gateway-api"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["api:8080"]
+  - job_name: "payment-gateway-consumer"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["consumer:8082"]

@@ -5,6 +5,8 @@ import (
 	"payment-gateway/internal/domain/payment"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type PaymentReadRepository struct {
@@ -16,6 +18,15 @@ func NewPaymentReadRepository(pool *pgxpool.Pool) *PaymentReadRepository {
 }
 
 func (repo *PaymentReadRepository) GetPaymentById(ctx context.Context, id string) (*payment.Payment, error) {
+	ctx, span := tracer.Start(ctx, "ReadRepo.GetPaymentById")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.operation", "SELECT"),
+		attribute.String("payment.id", id),
+	)
+
 	query := `
 		SELECT id, idempotency_key, amount, currency, status, version, created_at, updated_at
 		FROM payments
@@ -28,6 +39,8 @@ func (repo *PaymentReadRepository) GetPaymentById(ctx context.Context, id string
 	)
 
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 
@@ -35,6 +48,15 @@ func (repo *PaymentReadRepository) GetPaymentById(ctx context.Context, id string
 }
 
 func (repo *PaymentReadRepository) Upsert(ctx context.Context, p *payment.Payment) error {
+	ctx, span := tracer.Start(ctx, "ReadRepo.Upsert")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.operation", "UPSERT"),
+		attribute.String("payment.id", p.ID),
+	)
+
 	query := `
 		INSERT INTO payments (id, idempotency_key, amount, currency, status, version)
 		VALUES ($1, $2, $3, $4, $5, $6)
@@ -50,6 +72,8 @@ func (repo *PaymentReadRepository) Upsert(ctx context.Context, p *payment.Paymen
 	)
 
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 

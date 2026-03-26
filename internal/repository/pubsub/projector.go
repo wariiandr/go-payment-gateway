@@ -8,6 +8,8 @@ import (
 	"payment-gateway/internal/port"
 
 	"github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type PaymentProjector struct {
@@ -40,9 +42,20 @@ func (p *PaymentProjector) Start(ctx context.Context) error {
 			continue
 		}
 
+		_, span := tracer.Start(ctx, "PaymentProjector.ProjectEvent")
+		span.SetAttributes(
+			attribute.String("messaging.system", "kafka"),
+			attribute.String("messaging.source", "payments.events"),
+			attribute.String("aggregate.id", event.AggregateID),
+			attribute.String("event.type", string(event.Type)),
+		)
+
 		if err := p.projection.Project(ctx, event.AggregateID); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			slog.Error("payment projector: error projecting", "aggregateID", event.AggregateID, "error", err)
-			continue
 		}
+
+		span.End()
 	}
 }

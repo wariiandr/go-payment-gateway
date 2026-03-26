@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"payment-gateway/internal/config"
+	"payment-gateway/internal/infra/telemetry"
 	"payment-gateway/internal/repository/postgres"
 	"payment-gateway/internal/repository/provider"
 	"payment-gateway/internal/repository/pubsub"
@@ -31,6 +32,20 @@ func main() {
 
 	cfg := config.Load()
 
+	shutdownTracer, err := telemetry.InitTracer(rootCtx, "payment-gateway-api", cfg.OTelEndpoint)
+	if err != nil {
+		slog.Error("failed to init tracer", "error", err)
+		os.Exit(1)
+	}
+	defer shutdownTracer(rootCtx)
+
+	shutdownMetrics, metricsHandler, err := telemetry.InitMetrics()
+	if err != nil {
+		slog.Error("failed to init metrics", "error", err)
+		os.Exit(1)
+	}
+	defer shutdownMetrics(rootCtx)
+
 	pool, err := pgxpool.New(rootCtx, cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("failed to create pool", "error", err)
@@ -46,7 +61,7 @@ func main() {
 	paymentService := service.NewPaymentService(eventStore, readRepo, paymentProvider, publisher)
 
 	paymentHandler := transport.NewPaymentHandler(paymentService)
-	router := transport.NewRouter(paymentHandler)
+	router := transport.NewRouter(paymentHandler, metricsHandler)
 
 	ongoingCtx, stopOngoing := context.WithCancel(context.Background())
 	server := &http.Server{

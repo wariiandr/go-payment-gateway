@@ -4,9 +4,11 @@ import (
 	"context"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"payment-gateway/internal/config"
+	"payment-gateway/internal/infra/telemetry"
 	"payment-gateway/internal/repository/postgres"
 	"payment-gateway/internal/repository/provider"
 	"payment-gateway/internal/repository/pubsub"
@@ -26,6 +28,31 @@ func main() {
 	defer stop()
 
 	cfg := config.Load()
+
+	shutdownTracer, err := telemetry.InitTracer(rootCtx, "payment-gateway-consumer", cfg.OTelEndpoint)
+	if err != nil {
+		slog.Error("failed to init tracer", "error", err)
+		os.Exit(1)
+	}
+	defer shutdownTracer(rootCtx)
+
+	shutdownMetrics, metricsHandler, err := telemetry.InitMetrics()
+	if err != nil {
+		slog.Error("failed to init metrics", "error", err)
+		os.Exit(1)
+	}
+	defer shutdownMetrics(rootCtx)
+
+	go func() {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", metricsHandler)
+
+		slog.Info("starting metrics server for consumer", "addr", ":8082")
+
+		if err := http.ListenAndServe(":8082", mux); err != nil {
+			slog.Error("metrics server failed", "error", err)
+		}
+	}()
 
 	pool, err := pgxpool.New(rootCtx, cfg.DatabaseURL)
 	if err != nil {

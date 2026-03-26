@@ -11,6 +11,7 @@ type Config struct {
 	Port         string
 	DatabaseURL  string
 	KafkaBrokers []string
+	OTelEndpoint string
 }
 
 func Load() *Config {
@@ -20,6 +21,11 @@ func Load() *Config {
 		Port:         os.Getenv("PORT"),
 		DatabaseURL:  os.Getenv("DATABASE_URL"),
 		KafkaBrokers: []string{os.Getenv("KAFKA_BROKERS")},
+		OTelEndpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+	}
+
+	if cfg.OTelEndpoint == "" {
+		cfg.OTelEndpoint = "jaeger:4318"
 	}
 
 	if cfg.Port == "" {

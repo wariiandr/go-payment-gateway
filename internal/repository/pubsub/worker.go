@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type PaymentWorker struct {
@@ -40,10 +42,20 @@ func (w *PaymentWorker) Start(ctx context.Context) error {
 
 		paymentID := parts[1]
 
+		_, span := tracer.Start(ctx, "PaymentWorker.ProcessMessage")
+		span.SetAttributes(
+			attribute.String("messaging.system", "kafka"),
+			attribute.String("messaging.source", "payments.commands"),
+			attribute.String("payment.id", paymentID),
+		)
+
 		err = w.processor.ProcessPayment(ctx, paymentID)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			slog.Error("payment worker: error processing payment", "paymentID", paymentID, "error", err)
-			continue
 		}
+
+		span.End()
 	}
 }

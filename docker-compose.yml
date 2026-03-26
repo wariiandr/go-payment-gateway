@@ -1,5 +1,6 @@
 volumes:
   volume1:
+  grafana_data:
 services:
   api:
     build: .
@@ -9,9 +10,11 @@ services:
       - PORT=${PORT}
       - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
       - KAFKA_BROKERS=kafka:9092
+      - OTEL_EXPORTER_OTLP_ENDPOINT=jaeger:4318
     depends_on:
       - db
       - kafka
+      - jaeger
     restart: unless-stopped
   consumer:
     build:
@@ -20,9 +23,11 @@ services:
     environment:
       - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
       - KAFKA_BROKERS=kafka:9092
+      - OTEL_EXPORTER_OTLP_ENDPOINT=jaeger:4318
     depends_on:
       - db
       - kafka
+      - jaeger
     restart: unless-stopped
   db:
     image: postgres:16
@@ -65,4 +70,29 @@ services:
       KAFKA_CLUSTERS_0_NAME: kraft
     depends_on:
       - kafka
+    restart: unless-stopped
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "${JAEGER_UI_PORT}:16686"
+      - "${JAEGER_OTLP_PORT}:4318"
+    restart: unless-stopped
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "${PROMETHEUS_PORT}:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - api
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "${GRAFANA_PORT}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - jaeger
     restart: unless-stopped
