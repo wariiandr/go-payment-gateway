@@ -30,14 +30,16 @@ func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		Currency:       req.Currency,
 	}
 
-	err := h.service.CreatePayment(r.Context(), appReq)
+	id, err := h.service.CreatePayment(r.Context(), appReq)
 	if err != nil {
 		status, msg := mapError(err)
 		http.Error(w, msg, status)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"id": id})
 }
 
 func (h *PaymentHandler) GetPayment(w http.ResponseWriter, r *http.Request) {

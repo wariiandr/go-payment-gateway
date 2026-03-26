@@ -43,7 +43,7 @@ type CreatePaymentRequest struct {
 	Currency       payment.Currency `json:"currency"`
 }
 
-func (s *PaymentService) CreatePayment(ctx context.Context, request *CreatePaymentRequest) error {
+func (s *PaymentService) CreatePayment(ctx context.Context, request *CreatePaymentRequest) (string, error) {
 	ctx, span := tracer.Start(ctx, "PaymentService.CreatePayment")
 	defer span.End()
 
@@ -57,7 +57,7 @@ func (s *PaymentService) CreatePayment(ctx context.Context, request *CreatePayme
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return "", err
 	}
 
 	span.SetAttributes(attribute.String("payment.id", p.ID))
@@ -66,19 +66,19 @@ func (s *PaymentService) CreatePayment(ctx context.Context, request *CreatePayme
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return "", err
 	}
 
 	err = s.publisher.PublishCommand(ctx, fmt.Sprintf("process_payment:%s", p.ID))
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return "", err
 	}
 
 	s.recordPaymentStatus(ctx, string(payment.New), request.Currency)
 
-	return nil
+	return p.ID, nil
 }
 
 func (s *PaymentService) GetPayment(ctx context.Context, id string) (*payment.Payment, error) {
