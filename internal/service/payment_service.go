@@ -6,6 +6,7 @@ import (
 	"payment-gateway/internal/domain/payment"
 	"payment-gateway/internal/port"
 
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -22,18 +23,20 @@ var (
 )
 
 type PaymentService struct {
-	eventStore port.EventStore
-	readRepo   port.PaymentReadRepository
-	provider   port.PaymentProvider
-	publisher  port.PaymentPublisher
+	eventStore  port.EventStore
+	readRepo    port.PaymentReadRepository
+	provider    port.PaymentProvider
+	publisher   port.PaymentPublisher
+	commandRepo port.CommandRepository
 }
 
-func NewPaymentService(eventStore port.EventStore, readRepo port.PaymentReadRepository, provider port.PaymentProvider, publisher port.PaymentPublisher) *PaymentService {
+func NewPaymentService(eventStore port.EventStore, readRepo port.PaymentReadRepository, provider port.PaymentProvider, publisher port.PaymentPublisher, commandRepo port.CommandRepository) *PaymentService {
 	return &PaymentService{
-		eventStore: eventStore,
-		readRepo:   readRepo,
-		provider:   provider,
-		publisher:  publisher,
+		eventStore:  eventStore,
+		readRepo:    readRepo,
+		provider:    provider,
+		publisher:   publisher,
+		commandRepo: commandRepo,
 	}
 }
 
@@ -69,7 +72,10 @@ func (s *PaymentService) CreatePayment(ctx context.Context, request *CreatePayme
 		return "", err
 	}
 
-	err = s.publisher.PublishCommand(ctx, fmt.Sprintf("process_payment:%s", p.ID))
+	commandID := uuid.New().String()
+	span.SetAttributes(attribute.String("command.id", commandID))
+
+	err = s.publisher.PublishCommand(ctx, fmt.Sprintf("process_payment:%s:%s", commandID, p.ID))
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -97,13 +103,27 @@ func (s *PaymentService) GetPayment(ctx context.Context, id string) (*payment.Pa
 	return p, nil
 }
 
-func (s *PaymentService) ProcessPayment(ctx context.Context, id string) error {
+func (s *PaymentService) ProcessPayment(ctx context.Context, commandID string, paymentID string) error {
 	ctx, span := tracer.Start(ctx, "PaymentService.ProcessPayment")
 	defer span.End()
 
-	span.SetAttributes(attribute.String("payment.id", id))
+	span.SetAttributes(
+		attribute.String("command.id", commandID),
+		attribute.String("payment.id", paymentID),
+	)
 
-	events, err := s.eventStore.LoadEvents(ctx, id)
+	alreadyProcessed, err := s.commandRepo.IsProcessed(ctx, commandID)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if alreadyProcessed {
+		span.SetAttributes(attribute.Bool("command.duplicate", true))
+		return nil
+	}
+
+	events, err := s.eventStore.LoadEvents(ctx, paymentID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -126,9 +146,11 @@ func (s *PaymentService) ProcessPayment(ctx context.Context, id string) error {
 		return err
 	}
 
+	result := port.CommandResultCompleted
 	err = s.provider.Authorize(ctx, *p)
 	if err != nil {
 		p.Fail()
+		result = port.CommandResultFailed
 		s.recordPaymentStatus(ctx, string(payment.Failed), p.Currency)
 	} else {
 		p.Complete()
@@ -149,6 +171,12 @@ func (s *PaymentService) ProcessPayment(ctx context.Context, id string) error {
 			span.SetStatus(codes.Error, err.Error())
 			return err
 		}
+	}
+
+	if err := s.commandRepo.MarkProcessed(ctx, commandID, result); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
 	return nil

@@ -34,22 +34,24 @@ func (w *PaymentWorker) Start(ctx context.Context) error {
 			continue
 		}
 
-		parts := strings.SplitN(string(msg.Value), ":", 2)
-		if len(parts) != 2 || parts[0] != "process_payment" {
+		parts := strings.SplitN(string(msg.Value), ":", 3)
+		if len(parts) != 3 || parts[0] != "process_payment" {
 			slog.Warn("payment worker: invalid message format", "value", string(msg.Value))
 			continue
 		}
 
-		paymentID := parts[1]
+		commandID := parts[1]
+		paymentID := parts[2]
 
 		_, span := tracer.Start(ctx, "PaymentWorker.ProcessMessage")
 		span.SetAttributes(
 			attribute.String("messaging.system", "kafka"),
 			attribute.String("messaging.source", "payments.commands"),
+			attribute.String("command.id", commandID),
 			attribute.String("payment.id", paymentID),
 		)
 
-		err = w.processor.ProcessPayment(ctx, paymentID)
+		err = w.processor.ProcessPayment(ctx, commandID, paymentID)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())

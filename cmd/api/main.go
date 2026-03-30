@@ -55,10 +55,11 @@ func main() {
 
 	eventStore := postgres.NewEventStore(pool)
 	readRepo := postgres.NewPaymentReadRepository(pool)
+	commandRepo := postgres.NewCommandRepository(pool)
 	paymentProvider := provider.NewPaymentProvider()
 	publisher := pubsub.NewEventPublisher(cfg.KafkaBrokers)
 
-	paymentService := service.NewPaymentService(eventStore, readRepo, paymentProvider, publisher)
+	paymentService := service.NewPaymentService(eventStore, readRepo, paymentProvider, publisher, commandRepo)
 
 	paymentHandler := transport.NewPaymentHandler(paymentService)
 	router := transport.NewRouter(paymentHandler, metricsHandler)

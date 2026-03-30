@@ -15,3 +15,8 @@ type PaymentReadRepository interface {
 	GetPaymentById(ctx context.Context, id string) (*payment.Payment, error)
 	Upsert(ctx context.Context, payment *payment.Payment) error
 }
+
+type CommandRepository interface {
+	IsProcessed(ctx context.Context, commandID string) (bool, error)
+	MarkProcessed(ctx context.Context, commandID string, result CommandResult) error
+}

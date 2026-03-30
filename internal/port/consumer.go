@@ -3,7 +3,7 @@ package port
 import "context"
 
 type PaymentProcessor interface {
-	ProcessPayment(ctx context.Context, id string) error
+	ProcessPayment(ctx context.Context, commandID string, paymentID string) error
 }
 
 type PaymentProjection interface {
