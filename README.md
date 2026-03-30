@@ -74,7 +74,7 @@ curl -i -X GET http://localhost:8080/metrics
 
 ---
 
-## Observability (Наблюдаемость)
+## Observability
 
 Проект полностью инструментирован с помощью **OpenTelemetry**:
 - **Traces:** Любой HTTP-запрос (к `/payments...`) порождает распределённый трейс. Вызовы в PostgreSQL, публикации в Kafka и обработка внутри Worker'ов прошиты span'ами. Смотреть в **Jaeger**.
