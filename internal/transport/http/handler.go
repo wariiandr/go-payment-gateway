@@ -1,19 +1,27 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"payment-gateway/internal/domain/payment"
 	"payment-gateway/internal/service"
 
 	"github.com/go-chi/chi/v5"
 )
 
-type PaymentHandler struct {
-	service *service.PaymentService
+type PaymentUseCase interface {
+	CreatePayment(ctx context.Context, req *service.CreatePaymentRequest) (string, error)
+	GetPayment(ctx context.Context, id string) (*payment.Payment, error)
+	CancelPayment(ctx context.Context, id string) error
 }
 
-func NewPaymentHandler(svc *service.PaymentService) *PaymentHandler {
-	return &PaymentHandler{service: svc}
+type PaymentHandler struct {
+	useCase PaymentUseCase
+}
+
+func NewPaymentHandler(uc PaymentUseCase) *PaymentHandler {
+	return &PaymentHandler{useCase: uc}
 }
 
 func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +38,7 @@ func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		Currency:       req.Currency,
 	}
 
-	id, err := h.service.CreatePayment(r.Context(), appReq)
+	id, err := h.useCase.CreatePayment(r.Context(), appReq)
 	if err != nil {
 		status, msg := mapError(err)
 		http.Error(w, msg, status)
@@ -49,7 +57,7 @@ func (h *PaymentHandler) GetPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := h.service.GetPayment(r.Context(), id)
+	p, err := h.useCase.GetPayment(r.Context(), id)
 	if err != nil {
 		status, msg := mapError(err)
 		http.Error(w, msg, status)
@@ -78,7 +86,7 @@ func (h *PaymentHandler) CancelPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.service.CancelPayment(r.Context(), id)
+	err := h.useCase.CancelPayment(r.Context(), id)
 	if err != nil {
 		status, msg := mapError(err)
 		http.Error(w, msg, status)
