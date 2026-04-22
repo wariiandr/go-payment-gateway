@@ -59,7 +59,7 @@ func main() {
 	paymentProvider := provider.NewPaymentProvider()
 	publisher := pubsub.NewEventPublisher(cfg.KafkaBrokers)
 
-	paymentService := service.NewPaymentService(eventStore, readRepo, paymentProvider, publisher, commandRepo)
+	paymentService := service.NewPaymentService(eventStore, readRepo, paymentProvider, publisher, commandRepo, cfg.AuthorizeMaxAttempts)
 
 	paymentHandler := transport.NewPaymentHandler(paymentService)
 	router := transport.NewRouter(paymentHandler, metricsHandler)

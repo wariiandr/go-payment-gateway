@@ -19,7 +19,7 @@ func newTestService(
 	publisher port.PaymentPublisher,
 	commandRepo port.CommandRepository,
 ) *PaymentService {
-	return NewPaymentService(eventStore, readRepo, provider, publisher, commandRepo)
+	return NewPaymentService(eventStore, readRepo, provider, publisher, commandRepo, 1)
 }
 
 func buildEventListForPayment(key string, amount int64, currency payment.Currency) []payment.Event {

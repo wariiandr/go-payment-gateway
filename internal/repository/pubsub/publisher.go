@@ -3,7 +3,10 @@ package pubsub
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"payment-gateway/internal/domain/payment"
+	"payment-gateway/internal/port"
 
 	"github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/otel"
@@ -48,6 +51,11 @@ func (p *EventPublisher) PublishEvent(ctx context.Context, event payment.Event) 
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		slog.ErrorContext(ctx, "publisher: marshal event failed",
+			"event.type", event.Type,
+			"aggregate.id", event.AggregateID,
+			"error", err,
+		)
 		return err
 	}
 
@@ -58,8 +66,16 @@ func (p *EventPublisher) PublishEvent(ctx context.Context, event payment.Event) 
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		slog.ErrorContext(ctx, "publisher: write event failed",
+			"topic", "payments.events",
+			"event.type", event.Type,
+			"aggregate.id", event.AggregateID,
+			"error", err,
+		)
+		return errors.Join(port.ErrMessaging, err)
 	}
-	return err
+
+	return nil
 }
 
 func (p *EventPublisher) PublishCommand(ctx context.Context, cmd string) error {
@@ -78,6 +94,13 @@ func (p *EventPublisher) PublishCommand(ctx context.Context, cmd string) error {
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		slog.ErrorContext(ctx, "publisher: write command failed",
+			"topic", "payments.commands",
+			"command", cmd,
+			"error", err,
+		)
+		return errors.Join(port.ErrMessaging, err)
 	}
-	return err
+
+	return nil
 }

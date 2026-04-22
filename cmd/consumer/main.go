@@ -103,7 +103,7 @@ func main() {
 	paymentProvider := provider.NewPaymentProvider()
 	publisher := pubsub.NewEventPublisher(cfg.KafkaBrokers)
 
-	paymentService := service.NewPaymentService(eventStore, readRepo, paymentProvider, publisher, commandRepo)
+	paymentService := service.NewPaymentService(eventStore, readRepo, paymentProvider, publisher, commandRepo, cfg.AuthorizeMaxAttempts)
 	worker := pubsub.NewPaymentWorker(commandReader, paymentService)
 
 	go worker.Start(rootCtx)

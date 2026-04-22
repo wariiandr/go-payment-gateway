@@ -31,4 +31,3 @@ func (p *PaymentProvider) Authorize(ctx context.Context, pay payment.Payment) er
 	time.Sleep(3 * time.Second)
 	return nil
 }
-
